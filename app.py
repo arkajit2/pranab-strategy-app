@@ -46,20 +46,23 @@ def fetch_5m_data(ticker_list):
         try:
             df = yf.download(
                 ticker,
-                period="7d",
+                period="10d",
                 interval="5m",
                 progress=False,
                 threads=False
             )
 
-            if df.empty or len(df) < 200:
+            # Clean data (important for closed market)
+            df = df.dropna(subset=["Close"])
+
+            if df.empty:
                 continue
 
             df = calculate_ema(df)
             df = calculate_rsi(df)
 
             latest = df.iloc[-1]
-            prev = df.iloc[-2]
+            prev = df.iloc[-2] if len(df) > 1 else latest
 
             # ---- STRATEGY ---- #
             ema_ordered = (
@@ -98,13 +101,19 @@ def fetch_5m_data(ticker_list):
 with st.spinner("Fetching market data..."):
     data = fetch_5m_data(TICKERS)
 
+# ------------------ MARKET STATUS ------------------ #
+hour = datetime.now().hour
+minute = datetime.now().minute
+
+if hour < 9 or (hour == 9 and minute < 15) or hour > 15:
+    st.info("ℹ️ Market is currently closed. Showing last available data.")
+
 # ------------------ METRICS ------------------ #
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Market Time", datetime.now().strftime('%H:%M:%S'))
 col2.metric("Stocks Scanned", len(TICKERS))
 
-# Safe handling (fixes your error)
 if not data.empty and "Status" in data.columns:
     active_signals = len(data[data['Status'] != "NEUTRAL"])
 else:
@@ -112,9 +121,9 @@ else:
 
 col3.metric("Active Signals", active_signals)
 
-# ------------------ EMPTY DATA WARNING ------------------ #
+# ------------------ ERROR HANDLING ------------------ #
 if data.empty:
-    st.warning("⚠️ No data fetched. Market may be closed or API failed.")
+    st.error("❌ Failed to fetch stock data. Please try again later.")
 
 # ------------------ TABS ------------------ #
 tab1, tab2 = st.tabs(["🚀 Active Signals", "📊 Full Watchlist"])
