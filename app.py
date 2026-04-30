@@ -9,9 +9,9 @@ st.set_page_config(page_title="Pranab Strategy - Full Market Scanner", layout="w
 st_autorefresh(interval=300000, key="refresh")
 
 st.title("📊 Pranab Strategy - Full Market Scanner")
-st.info("EMA + RSI + Volume Strategy (All NSE Stocks)")
+st.info("EMA + RSI + Volume Strategy")
 
-# ------------------ FULL STOCK LIST ------------------ #
+# ------------------ STOCK LIST ------------------ #
 TICKERS = [
 "AARTIIND.NS","ABB.NS","ABBOTINDIA.NS","ABCAPITAL.NS","ABFRL.NS","ACC.NS",
 "ADANIENSOL.NS","ADANIENT.NS","ADANIGREEN.NS","ADANIPORTS.NS","ADANIPOWER.NS",
@@ -117,8 +117,13 @@ def fetch_data(tickers):
             results.append({
                 "Stock": ticker,
                 "Close": round(latest['Close'], 2),
+                "EMA20": round(latest['EMA20'], 2),
+                "EMA50": round(latest['EMA50'], 2),
+                "EMA100": round(latest['EMA100'], 2),
+                "EMA200": round(latest['EMA200'], 2),
                 "RSI": round(latest['RSI14'], 2),
                 "Volume": int(latest['Volume']),
+                "Prev Volume": int(prev['Volume']),
                 "Status": status
             })
 
@@ -130,9 +135,9 @@ def fetch_data(tickers):
 # ------------------ RUN ------------------ #
 data = fetch_data(TICKERS)
 
-st.write("### Results")
+st.subheader("📊 Results")
 
 if not data.empty:
-    st.dataframe(data)
+    st.dataframe(data, use_container_width=True)
 else:
     st.error("No data fetched")
