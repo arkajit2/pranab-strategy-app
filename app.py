@@ -9,7 +9,7 @@ st.set_page_config(page_title="Pranab Strategy 4 - 5m Intraday", layout="wide")
 st_autorefresh(interval=300000, key="fivedata")
 
 st.title("🕒 Pranab Strategy 4 - 5 Min Intraday")
-st.info("EMA 20, 50, 100, 200 + RSI (Stable Version)")
+st.info("EMA 20, 50, 100, 200 + RSI (Cloud Stable Version)")
 
 # ------------------ STOCK LIST ------------------ #
 TICKERS = [
@@ -18,53 +18,55 @@ TICKERS = [
 ]
 
 # ------------------ INDICATORS ------------------ #
-def calculate_ema(df):
-    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
-    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
-    df['EMA100'] = df['Close'].ewm(span=100, adjust=False).mean()
-    df['EMA200'] = df['Close'].ewm(span=200, adjust=False).mean()
-    return df
+def add_indicators(df):
+    df['EMA20'] = df['Close'].ewm(span=20).mean()
+    df['EMA50'] = df['Close'].ewm(span=50).mean()
+    df['EMA100'] = df['Close'].ewm(span=100).mean()
+    df['EMA200'] = df['Close'].ewm(span=200).mean()
 
-def calculate_rsi(df, period=14):
     delta = df['Close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
 
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
 
     rs = avg_gain / avg_loss
     df['RSI14'] = 100 - (100 / (1 + rs))
+
     return df
 
 # ------------------ DATA FETCH ------------------ #
-@st.cache_data(ttl=290)
-def fetch_5m_data(ticker_list):
+@st.cache_data(ttl=300)
+def fetch_data(tickers):
+
+    try:
+        df = yf.download(
+            tickers=tickers,
+            period="10d",
+            interval="5m",
+            group_by="ticker",
+            progress=False,
+            threads=False
+        )
+    except Exception:
+        return pd.DataFrame()
+
     results = []
 
-    for ticker in ticker_list:
+    for ticker in tickers:
         try:
-            df = yf.download(
-                ticker,
-                period="10d",
-                interval="5m",
-                progress=False,
-                threads=False
-            )
+            stock_df = df[ticker].dropna()
 
-            # Clean data (important for closed market)
-            df = df.dropna(subset=["Close"])
-
-            if df.empty:
+            if stock_df.empty:
                 continue
 
-            df = calculate_ema(df)
-            df = calculate_rsi(df)
+            stock_df = add_indicators(stock_df)
 
-            latest = df.iloc[-1]
-            prev = df.iloc[-2] if len(df) > 1 else latest
+            latest = stock_df.iloc[-1]
+            prev = stock_df.iloc[-2] if len(stock_df) > 1 else latest
 
-            # ---- STRATEGY ---- #
+            # STRATEGY
             ema_ordered = (
                 latest['EMA20'] > latest['EMA50'] >
                 latest['EMA100'] > latest['EMA200']
@@ -82,13 +84,11 @@ def fetch_5m_data(ticker_list):
             results.append({
                 "Stock": ticker,
                 "LTP": round(float(latest['Close']), 2),
-                "EMA 20": round(float(latest['EMA20']), 2),
-                "EMA 50": round(float(latest['EMA50']), 2),
-                "EMA 100": round(float(latest['EMA100']), 2),
-                "EMA 200": round(float(latest['EMA200']), 2),
-                "RSI 14": round(float(latest['RSI14']), 2),
-                "Current Vol": int(latest['Volume']),
-                "Prev Vol": int(prev['Volume']),
+                "EMA20": round(float(latest['EMA20']), 2),
+                "EMA50": round(float(latest['EMA50']), 2),
+                "EMA100": round(float(latest['EMA100']), 2),
+                "EMA200": round(float(latest['EMA200']), 2),
+                "RSI": round(float(latest['RSI14']), 2),
                 "Status": status
             })
 
@@ -97,62 +97,52 @@ def fetch_5m_data(ticker_list):
 
     return pd.DataFrame(results)
 
-# ------------------ FETCH DATA ------------------ #
+# ------------------ FETCH ------------------ #
 with st.spinner("Fetching market data..."):
-    data = fetch_5m_data(TICKERS)
+    data = fetch_data(TICKERS)
 
 # ------------------ MARKET STATUS ------------------ #
 hour = datetime.now().hour
 minute = datetime.now().minute
 
 if hour < 9 or (hour == 9 and minute < 15) or hour > 15:
-    st.info("ℹ️ Market is currently closed. Showing last available data.")
+    st.info("ℹ️ Market closed — showing last available data")
 
 # ------------------ METRICS ------------------ #
 col1, col2, col3 = st.columns(3)
 
-col1.metric("Market Time", datetime.now().strftime('%H:%M:%S'))
-col2.metric("Stocks Scanned", len(TICKERS))
+col1.metric("Time", datetime.now().strftime('%H:%M:%S'))
+col2.metric("Stocks", len(TICKERS))
 
-if not data.empty and "Status" in data.columns:
-    active_signals = len(data[data['Status'] != "NEUTRAL"])
+if not data.empty:
+    active = len(data[data["Status"] != "NEUTRAL"])
 else:
-    active_signals = 0
+    active = 0
 
-col3.metric("Active Signals", active_signals)
+col3.metric("Signals", active)
 
-# ------------------ ERROR HANDLING ------------------ #
-if data.empty:
-    st.error("❌ Failed to fetch stock data. Please try again later.")
-
-# ------------------ TABS ------------------ #
-tab1, tab2 = st.tabs(["🚀 Active Signals", "📊 Full Watchlist"])
+# ------------------ DISPLAY ------------------ #
+tab1, tab2 = st.tabs(["🚀 Signals", "📊 Watchlist"])
 
 with tab1:
-    if not data.empty and "Status" in data.columns:
-        signals = data[data['Status'] != "NEUTRAL"]
-    else:
-        signals = pd.DataFrame()
+    if not data.empty:
+        signals = data[data["Status"] != "NEUTRAL"]
 
-    if not signals.empty:
-        st.dataframe(
-            signals.style.applymap(
-                lambda x: 'background-color: #004d00' if 'BUY' in str(x)
-                else ('background-color: #4d0000' if 'SELL' in str(x) else ''),
-                subset=['Status']
-            ),
-            use_container_width=True
-        )
+        if not signals.empty:
+            st.dataframe(signals, use_container_width=True)
+        else:
+            st.write("No active signals")
     else:
-        st.write("Monitoring market for setups...")
+        st.warning("No data returned")
 
 with tab2:
     if not data.empty:
         st.dataframe(data, use_container_width=True)
+    else:
+        st.warning("Data unavailable")
 
-# ------------------ MANUAL REFRESH ------------------ #
-if st.button("🔄 Refresh Now"):
+# ------------------ REFRESH ------------------ #
+if st.button("🔄 Refresh"):
     st.cache_data.clear()
 
-# ------------------ FOOTER ------------------ #
-st.caption(f"Next refresh at: {(datetime.now().minute // 5 + 1) * 5}:00")
+st.caption("Auto-refresh every 5 minutes")
