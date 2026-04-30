@@ -4,23 +4,20 @@ import pandas as pd
 from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
-# Page config
+# ------------------ PAGE SETUP ------------------ #
 st.set_page_config(page_title="Pranab Strategy 4 - 5m Intraday", layout="wide")
-
-# Auto refresh every 5 minutes
 st_autorefresh(interval=300000, key="fivedata")
 
 st.title("🕒 Pranab Strategy 4 - 5 Min Intraday")
-st.info("EMA 20, 50, 100, 200 + RSI (No pandas-ta, fully stable)")
+st.info("EMA 20, 50, 100, 200 + RSI (Stable Version)")
 
-# NSE Stocks
+# ------------------ STOCK LIST ------------------ #
 TICKERS = [
     "AARTIIND.NS", "ABB.NS", "ABBOTINDIA.NS", "ABCAPITAL.NS", "ABFRL.NS",
     "ACC.NS", "ADANIGREEN.NS", "ADANIPORTS.NS", "ADANIENSOL.NS", "ADANIENT.NS"
 ]
 
-# ---- INDICATOR FUNCTIONS ---- #
-
+# ------------------ INDICATORS ------------------ #
 def calculate_ema(df):
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
@@ -40,8 +37,7 @@ def calculate_rsi(df, period=14):
     df['RSI14'] = 100 - (100 / (1 + rs))
     return df
 
-# ---- DATA FETCH ---- #
-
+# ------------------ DATA FETCH ------------------ #
 @st.cache_data(ttl=290)
 def fetch_5m_data(ticker_list):
     results = []
@@ -59,14 +55,13 @@ def fetch_5m_data(ticker_list):
             if df.empty or len(df) < 200:
                 continue
 
-            # Indicators
             df = calculate_ema(df)
             df = calculate_rsi(df)
 
             latest = df.iloc[-1]
             prev = df.iloc[-2]
 
-            # ---- BUY LOGIC ----
+            # ---- STRATEGY ---- #
             ema_ordered = (
                 latest['EMA20'] > latest['EMA50'] >
                 latest['EMA100'] > latest['EMA200']
@@ -99,23 +94,36 @@ def fetch_5m_data(ticker_list):
 
     return pd.DataFrame(results)
 
-# ---- UI ---- #
-
+# ------------------ FETCH DATA ------------------ #
 with st.spinner("Fetching market data..."):
     data = fetch_5m_data(TICKERS)
 
-# Metrics
+# ------------------ METRICS ------------------ #
 col1, col2, col3 = st.columns(3)
 
 col1.metric("Market Time", datetime.now().strftime('%H:%M:%S'))
 col2.metric("Stocks Scanned", len(TICKERS))
-col3.metric("Active Signals", len(data[data['Status'] != "NEUTRAL"]))
 
-# Tabs
+# Safe handling (fixes your error)
+if not data.empty and "Status" in data.columns:
+    active_signals = len(data[data['Status'] != "NEUTRAL"])
+else:
+    active_signals = 0
+
+col3.metric("Active Signals", active_signals)
+
+# ------------------ EMPTY DATA WARNING ------------------ #
+if data.empty:
+    st.warning("⚠️ No data fetched. Market may be closed or API failed.")
+
+# ------------------ TABS ------------------ #
 tab1, tab2 = st.tabs(["🚀 Active Signals", "📊 Full Watchlist"])
 
 with tab1:
-    signals = data[data['Status'] != "NEUTRAL"]
+    if not data.empty and "Status" in data.columns:
+        signals = data[data['Status'] != "NEUTRAL"]
+    else:
+        signals = pd.DataFrame()
 
     if not signals.empty:
         st.dataframe(
@@ -132,11 +140,10 @@ with tab1:
 with tab2:
     if not data.empty:
         st.dataframe(data, use_container_width=True)
-    else:
-        st.warning("No data available. Market may be closed.")
 
-# Manual refresh
+# ------------------ MANUAL REFRESH ------------------ #
 if st.button("🔄 Refresh Now"):
     st.cache_data.clear()
 
+# ------------------ FOOTER ------------------ #
 st.caption(f"Next refresh at: {(datetime.now().minute // 5 + 1) * 5}:00")
