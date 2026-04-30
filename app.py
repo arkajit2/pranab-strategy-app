@@ -5,11 +5,11 @@ from streamlit_autorefresh import st_autorefresh
 from datetime import datetime
 
 # ------------------ PAGE SETUP ------------------ #
-st.set_page_config(page_title="Pranab Strategy 4 - 5m Intraday", layout="wide")
+st.set_page_config(page_title="Pranab Strategy 4 - Intraday", layout="wide")
 st_autorefresh(interval=300000, key="fivedata")
 
-st.title("🕒 Pranab Strategy 4 - 5 Min Intraday")
-st.info("EMA 20, 50, 100, 200 + RSI (Cloud Stable Version)")
+st.title("🕒 Pranab Strategy 4 - Intraday Scanner")
+st.info("EMA + RSI + Volume Strategy (Final Logic)")
 
 # ------------------ STOCK LIST ------------------ #
 TICKERS = [
@@ -66,29 +66,40 @@ def fetch_data(tickers):
             latest = stock_df.iloc[-1]
             prev = stock_df.iloc[-2] if len(stock_df) > 1 else latest
 
-            # STRATEGY
-            ema_ordered = (
-                latest['EMA20'] > latest['EMA50'] >
-                latest['EMA100'] > latest['EMA200']
+            # ------------------ BUY LOGIC ------------------ #
+            buy = (
+                latest['Close'] > latest['EMA20'] and
+                latest['EMA20'] > latest['EMA50'] > latest['EMA100'] > latest['EMA200'] and
+                latest['RSI14'] > 50 and
+                latest['Volume'] > prev['Volume'] and
+                latest['Volume'] > 500000
             )
 
-            vol_spike = latest['Volume'] > prev['Volume']
+            # ------------------ SELL LOGIC (UPDATED) ------------------ #
+            sell = (
+                latest['Close'] < latest['EMA200'] and
+                latest['EMA20'] < latest['EMA50'] < latest['EMA100'] < latest['EMA200'] and
+                latest['RSI14'] < 50 and
+                latest['Volume'] < prev['Volume'] and
+                latest['Volume'] > 500000
+            )
 
             status = "NEUTRAL"
-
-            if ema_ordered and vol_spike:
+            if buy:
                 status = "🟢 BUY"
-            elif (latest['EMA200'] > latest['EMA100'] > latest['EMA50']):
+            elif sell:
                 status = "🔴 SELL"
 
             results.append({
                 "Stock": ticker,
-                "LTP": round(float(latest['Close']), 2),
+                "Close": round(float(latest['Close']), 2),
                 "EMA20": round(float(latest['EMA20']), 2),
                 "EMA50": round(float(latest['EMA50']), 2),
                 "EMA100": round(float(latest['EMA100']), 2),
                 "EMA200": round(float(latest['EMA200']), 2),
                 "RSI": round(float(latest['RSI14']), 2),
+                "Volume": int(latest['Volume']),
+                "Prev Volume": int(prev['Volume']),
                 "Status": status
             })
 
@@ -138,8 +149,6 @@ with tab1:
 with tab2:
     if not data.empty:
         st.dataframe(data, use_container_width=True)
-    else:
-        st.warning("Data unavailable")
 
 # ------------------ REFRESH ------------------ #
 if st.button("🔄 Refresh"):
